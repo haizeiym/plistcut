@@ -101,11 +101,13 @@ def gen_fnt_file(fnt_path, chars, rects, img_name, line_height):
 
 def main():
     parser = argparse.ArgumentParser(description='图片字体切割与.fnt生成工具')
-    parser.add_argument('--input', required=True, help='输入图片路径')
-    parser.add_argument('--output', required=True, help='输出目录')
-    parser.add_argument('--char-order', help='字符顺序字符串')
-    parser.add_argument('--mapping', help='字符映射文件路径')
-    parser.add_argument('--only-cut', action='store_true', help='只切割图片并生成映射模板')
+    parser.add_argument('--input',"-i", required=True, help='输入图片路径')
+    parser.add_argument('--output', "-o", required=True, help='输出目录')
+    parser.add_argument('--char-order', "-co", help='字符顺序字符串')
+    parser.add_argument('--mapping', "-m", help='字符映射文件路径')
+    parser.add_argument('--only-cut', "-oc", action='store_true', help='只切割图片并生成映射模板')
+    parser.add_argument('--img-name', "-in", default='font.png', help='输出字体图集图片名(.png)')
+    parser.add_argument('--fnt-name', "-fn", default='font.fnt', help='输出字体配置名(.fnt)')
     args = parser.parse_args()
 
     image = Image.open(args.input).convert('RGBA')
@@ -133,9 +135,9 @@ def main():
         sys.exit(1)
 
     # 生成图集和fnt
-    atlas_path = os.path.join(args.output, 'font.png')
+    atlas_path = os.path.join(args.output, args.img_name)
     rects, max_h = gen_font_atlas(char_paths, atlas_path)
-    fnt_path = os.path.join(args.output, 'font.fnt')
+    fnt_path = os.path.join(args.output, args.fnt_name)
     gen_fnt_file(fnt_path, chars, rects, os.path.basename(atlas_path), max_h)
     print(f"[完成] 字体图集已生成: {atlas_path}")
 
