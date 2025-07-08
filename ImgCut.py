@@ -112,22 +112,52 @@ def main():
 
     image = Image.open(args.input).convert('RGBA')
     char_boxes = auto_split_characters(image)
-    char_dir = os.path.join(args.output, 'chars')
-    char_paths = save_char_images(image, char_boxes, char_dir)
-    print(f"[信息] 已切割{len(char_paths)}个字符图片，保存在: {char_dir}")
 
-    if args.only_cut or (not args.char_order and not args.mapping):
+    # 如果有--char-order参数，不输出chars目录和char_x.png
+    if args.char_order:
+        char_paths = []  # 不生成char_x.png
+    else:
+        char_dir = os.path.join(args.output, 'chars')
+        char_paths = save_char_images(image, char_boxes, char_dir)
+        print(f"[信息] 已切割{len(char_paths)}个字符图片，保存在: {char_dir}")
+
+    if args.only_cut:
         # 只切割图片，生成映射模板
-        mapping_path = os.path.join(args.output, 'mapping.txt')
-        write_mapping_template(char_paths, mapping_path)
-        print("[提示] 请填写mapping.txt后再运行本脚本生成.fnt")
+        if not args.char_order:
+            mapping_path = os.path.join(args.output, 'mapping.txt')
+            write_mapping_template(char_paths, mapping_path)
+            print("[提示] 请填写mapping.txt后再运行本脚本生成.fnt")
+        else:
+            print("[提示] --char-order模式下无需生成映射模板")
         return
 
     if args.char_order:
         chars = list(args.char_order)
-        if len(chars) != len(char_paths):
-            print(f"[错误] 字符顺序数量({len(chars)})与切割图片数({len(char_paths)})不符")
+        if len(chars) != len(char_boxes):
+            print(f"[错误] 字符顺序数量({len(chars)})与切割图片数({len(char_boxes)})不符")
             sys.exit(1)
+        # 生成临时char图片用于atlas
+        temp_char_imgs = []
+        for idx, (x0, y0, x1, y1) in enumerate(char_boxes):
+            x0m = max(0, x0 - 2)
+            x1m = min(image.width, x1 + 2)
+            char_img = image.crop((x0m, y0, x1m, y1))
+            temp_char_imgs.append(char_img)
+        # 保存到临时目录，在整个函数执行期间保持存在
+        from tempfile import mkdtemp
+        import shutil
+        tmpdir = mkdtemp()
+        try:
+            temp_paths = []
+            for idx, im in enumerate(temp_char_imgs):
+                p = os.path.join(tmpdir, f"char_{idx}.png")
+                im.save(p)
+                temp_paths.append(p)
+            char_paths = temp_paths
+        except Exception as e:
+            # 如果出错，清理临时目录
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            raise e
     elif args.mapping:
         chars = read_mapping(args.mapping, len(char_paths))
     else:
@@ -140,6 +170,10 @@ def main():
     fnt_path = os.path.join(args.output, args.fnt_name)
     gen_fnt_file(fnt_path, chars, rects, os.path.basename(atlas_path), max_h)
     print(f"[完成] 字体图集已生成: {atlas_path}")
+    
+    # 清理临时目录
+    if args.char_order and 'tmpdir' in locals():
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 if __name__ == '__main__':
     main()
