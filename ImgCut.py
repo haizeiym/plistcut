@@ -1,21 +1,28 @@
+import argparse
 import os
 import sys
-import argparse
-from PIL import Image
-import numpy as np
 
-def auto_split_characters(image, min_width=2):
+import numpy as np
+from PIL import Image
+
+
+def auto_split_characters(image, min_width=2, alpha_threshold=16, min_solid_rows=2):
     """
     自动横向切割图片中的字符块，返回每个字符的(x0, y0, x1, y1)
     """
     arr = np.array(image)
     h, w = arr.shape[0], arr.shape[1]
-    # 统计每一列是否有非透明像素
+    # 统计每一列是否有“足够实心”的前景像素
+    # 对带外发光/描边的字体，低 alpha 的柔光像素会连接相邻字符，因此这里用阈值与最小行数过滤
     if arr.shape[2] == 4:
         alpha = arr[:, :, 3]
-        col_has = np.any(alpha > 0, axis=0)
+        solid_per_col = np.count_nonzero(alpha > alpha_threshold, axis=0)
+        col_has = solid_per_col >= min_solid_rows
     else:
-        col_has = np.any(np.any(arr[:, :3] != 255, axis=2), axis=0)
+        # 无 alpha 时，认为非纯白即前景，同样要求一定数量的前景像素
+        fg = np.any(arr[:, :3] != 255, axis=2)
+        solid_per_col = np.count_nonzero(fg, axis=0)
+        col_has = solid_per_col >= min_solid_rows
     # 找到字符区间
     bounds = []
     in_char = False
@@ -144,8 +151,8 @@ def main():
             char_img = image.crop((x0m, y0, x1m, y1))
             temp_char_imgs.append(char_img)
         # 保存到临时目录，在整个函数执行期间保持存在
-        from tempfile import mkdtemp
         import shutil
+        from tempfile import mkdtemp
         tmpdir = mkdtemp()
         try:
             temp_paths = []
