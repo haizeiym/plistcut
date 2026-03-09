@@ -41,10 +41,11 @@ def auto_split_characters(image, min_width=2, alpha_threshold=16, min_solid_rows
             bounds.append((start, end))
     # 返回每个字符的(x0, y0, x1, y1)
     char_boxes = []
-    for (x0, x1) in bounds:
+    for x0, x1 in bounds:
         # 上下全高
         char_boxes.append((x0, 0, x1, h))
     return char_boxes
+
 
 def save_char_images(image, char_boxes, output_dir, margin=2):
     os.makedirs(output_dir, exist_ok=True)
@@ -59,22 +60,25 @@ def save_char_images(image, char_boxes, output_dir, margin=2):
         char_paths.append(out_path)
     return char_paths
 
+
 def write_mapping_template(char_paths, output_path):
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         for idx, path in enumerate(char_paths):
             f.write(f"char_{idx}=\n")
     print(f"[提示] 映射模板已生成: {output_path}")
 
+
 def read_mapping(mapping_path, n):
     mapping = []
-    with open(mapping_path, 'r', encoding='utf-8') as f:
+    with open(mapping_path, "r", encoding="utf-8") as f:
         for line in f:
-            if '=' in line:
-                _, ch = line.strip().split('=', 1)
+            if "=" in line:
+                _, ch = line.strip().split("=", 1)
                 mapping.append(ch)
     if len(mapping) != n:
         raise ValueError(f"映射文件字符数({len(mapping)})与切割图片数({n})不符")
     return mapping
+
 
 def gen_font_atlas(char_paths, output_img_path, margin=1):
     # 横向拼接所有字符图片
@@ -83,7 +87,7 @@ def gen_font_atlas(char_paths, output_img_path, margin=1):
     max_h = max(heights)
     widths = [im.width for im in imgs]
     total_w = sum(widths) + margin * (len(imgs) - 1)
-    atlas = Image.new('RGBA', (total_w, max_h), (0, 0, 0, 0))
+    atlas = Image.new("RGBA", (total_w, max_h), (0, 0, 0, 0))
     x = 0
     rects = []
     for im in imgs:
@@ -93,45 +97,81 @@ def gen_font_atlas(char_paths, output_img_path, margin=1):
     atlas.save(output_img_path)
     return rects, max_h
 
+
 def gen_fnt_file(fnt_path, chars, rects, img_name, line_height):
     # BMFont文本格式
-    with open(fnt_path, 'w', encoding='utf-8') as f:
-        f.write(f"info face=\"custom\" size={line_height} bold=0 italic=0 charset=\"\" unicode=0 stretchH=100 smooth=1 aa=1 padding=0,0,0,0 spacing=1,1\n")
-        f.write(f"common lineHeight={line_height} base=0 scaleW=0 scaleH=0 pages=1 packed=0\n")
-        f.write(f"page id=0 file=\"{img_name}\"\n")
+    with open(fnt_path, "w", encoding="utf-8") as f:
+        f.write(
+            f'info face="custom" size={line_height} bold=0 italic=0 charset="" unicode=0 stretchH=100 smooth=1 aa=1 padding=0,0,0,0 spacing=1,1\n'
+        )
+        f.write(
+            f"common lineHeight={line_height} base=0 scaleW=0 scaleH=0 pages=1 packed=0\n"
+        )
+        f.write(f'page id=0 file="{img_name}"\n')
         f.write(f"chars count={len(chars)}\n")
         for i, ch in enumerate(chars):
             ch_id = ord(ch) if ch else 32
             x, y, w, h = rects[i]
-            f.write(f"char id={ch_id} x={x} y={y} width={w} height={h} xoffset=0 yoffset=0 xadvance={w} page=0 chnl=0\n")
+            f.write(
+                f"char id={ch_id} x={x} y={y} width={w} height={h} xoffset=0 yoffset=0 xadvance={w} page=0 chnl=0\n"
+            )
     print(f"[完成] .fnt文件已生成: {fnt_path}")
 
+
+def normalize_char_order(char_order: str) -> str:
+    """
+    规范化字符顺序，兼容命令行里 $ 被 shell 展开的场景：
+    - "\\$012..." -> "$012..."
+    - "sh123..."  -> "$0123..."（典型是 "$0" 被展开为 shell 名称 "sh"）
+    """
+    if not char_order:
+        return char_order
+
+    # 兼容用户输入了转义写法
+    if "\\$" in char_order:
+        char_order = char_order.replace("\\$", "$")
+
+    # 兼容 $0 在 shell 中被展开为 "sh" 的常见情况
+    # 例如: "$0123456789,." -> "sh123456789,."
+    if char_order.startswith("sh") and "$" not in char_order:
+        if len(char_order) >= 3 and char_order[2].isdigit():
+            char_order = "$0" + char_order[2:]
+
+    return char_order
+
+
 def main():
-    parser = argparse.ArgumentParser(description='图片字体切割与.fnt生成工具')
-    parser.add_argument('--input',"-i", required=True, help='输入图片路径')
-    parser.add_argument('--output', "-o", required=True, help='输出目录')
-    parser.add_argument('--char-order', "-co", help='字符顺序字符串')
-    parser.add_argument('--mapping', "-m", help='字符映射文件路径')
-    parser.add_argument('--only-cut', "-oc", action='store_true', help='只切割图片并生成映射模板')
-    parser.add_argument('--img-name', "-in", default='font.png', help='输出字体图集图片名(.png)')
-    parser.add_argument('--fnt-name', "-fn", default='font.fnt', help='输出字体配置名(.fnt)')
+    parser = argparse.ArgumentParser(description="图片字体切割与.fnt生成工具")
+    parser.add_argument("--input", "-i", required=True, help="输入图片路径")
+    parser.add_argument("--output", "-o", required=True, help="输出目录")
+    parser.add_argument("--char-order", "-co", help="字符顺序字符串")
+    parser.add_argument("--mapping", "-m", help="字符映射文件路径")
+    parser.add_argument(
+        "--only-cut", "-oc", action="store_true", help="只切割图片并生成映射模板"
+    )
+    parser.add_argument(
+        "--img-name", "-in", default="font.png", help="输出字体图集图片名(.png)"
+    )
+    parser.add_argument(
+        "--fnt-name", "-fn", default="font.fnt", help="输出字体配置名(.fnt)"
+    )
     args = parser.parse_args()
 
-    image = Image.open(args.input).convert('RGBA')
+    image = Image.open(args.input).convert("RGBA")
     char_boxes = auto_split_characters(image)
 
     # 如果有--char-order参数，不输出chars目录和char_x.png
     if args.char_order:
         char_paths = []  # 不生成char_x.png
     else:
-        char_dir = os.path.join(args.output, 'chars')
+        char_dir = os.path.join(args.output, "chars")
         char_paths = save_char_images(image, char_boxes, char_dir)
         print(f"[信息] 已切割{len(char_paths)}个字符图片，保存在: {char_dir}")
 
     if args.only_cut:
         # 只切割图片，生成映射模板
         if not args.char_order:
-            mapping_path = os.path.join(args.output, 'mapping.txt')
+            mapping_path = os.path.join(args.output, "mapping.txt")
             write_mapping_template(char_paths, mapping_path)
             print("[提示] 请填写mapping.txt后再运行本脚本生成.fnt")
         else:
@@ -139,9 +179,11 @@ def main():
         return
 
     if args.char_order:
-        chars = list(args.char_order)
+        chars = list(normalize_char_order(args.char_order))
         if len(chars) != len(char_boxes):
-            print(f"[错误] 字符顺序数量({len(chars)})与切割图片数({len(char_boxes)})不符")
+            print(
+                f"[错误] 字符顺序数量({len(chars)})与切割图片数({len(char_boxes)})不符"
+            )
             sys.exit(1)
         # 生成临时char图片用于atlas
         temp_char_imgs = []
@@ -153,6 +195,7 @@ def main():
         # 保存到临时目录，在整个函数执行期间保持存在
         import shutil
         from tempfile import mkdtemp
+
         tmpdir = mkdtemp()
         try:
             temp_paths = []
@@ -177,10 +220,11 @@ def main():
     fnt_path = os.path.join(args.output, args.fnt_name)
     gen_fnt_file(fnt_path, chars, rects, os.path.basename(atlas_path), max_h)
     print(f"[完成] 字体图集已生成: {atlas_path}")
-    
+
     # 清理临时目录
-    if args.char_order and 'tmpdir' in locals():
+    if args.char_order and "tmpdir" in locals():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
